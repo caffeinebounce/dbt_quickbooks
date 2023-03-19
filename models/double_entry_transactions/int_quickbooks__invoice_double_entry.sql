@@ -15,6 +15,11 @@ invoice_lines as (
     from {{ ref('stg_quickbooks__invoice_line') }}
 ),
 
+invoice_tax_lines as (
+    select * 
+    from {{ ref('stg_quickbooks__invoice_tax_line') }}
+),
+
 items as (
     select 
         item.*, 
@@ -26,8 +31,25 @@ items as (
         and item.source_relation = parent.source_relation
 ),
 
-accounts as (
+tax_agency as (
     select *
+    from {{ ref('stg_quickbooks__tax_agency') }}
+),
+
+tax_rate as (
+    select *
+    from {{ ref('stg_quickbooks__tax_rate') }}
+),
+
+/* QBO doesn't actually have accounts tax line mapping, so I'm maintaining this manually, 
+you could change this to a lookup if the naming is consistent between the accounts and tax_agency tables */
+accounts as (
+    select *,
+    case
+        when account_id = 84 then 1
+        when account_id = 86 then 3
+        else null
+    end as tax_agency_id
     from {{ ref('stg_quickbooks__account') }}
 ),
 
@@ -91,6 +113,58 @@ ar_accounts as (
     where account_type = 'Accounts Receivable'
 ),
 
+tax_ref_table as (
+	select
+    tax_rate.tax_rate_id as tax_rate_id,
+    tax_rate.source_relation as source_relation,
+    tax_rate.rate_value as rate_value,
+    tax_rate.description as description,
+    tax_agency.tax_agency_id as tax_agency_id,
+    accounts.account_id as account_id
+    from tax_rate
+
+    inner join tax_agency
+    	on tax_rate.tax_agency_id = tax_agency.tax_agency_id
+
+    left join accounts
+        on tax_rate.tax_agency_id = accounts.tax_agency_id
+),
+
+tax_lines as (
+    select invoice_tax_lines.invoice_id as invoice_id,
+    invoice_tax_lines.source_relation as source_relation,
+    invoice_tax_lines.index as tax_line_index, 
+    invoice_tax_lines.amount as amount,
+    invoice_tax_lines.tax_rate_id as tax_rate_id,
+    tax_ref_table.description as description,
+    tax_ref_table.account_id as account_id
+    from invoice_tax_lines
+
+    inner join tax_ref_table
+        on invoice_tax_lines.tax_rate_id = tax_ref_table.tax_rate_id
+
+    where tax_ref_table.account_id is not null and invoice_tax_lines.amount != 0
+),
+
+tax_join as (
+    select
+        invoices.invoice_id as transaction_id,
+        invoices.source_relation,
+        tax_lines.tax_line_index, 
+        invoices.transaction_date as transaction_date,
+        tax_lines.amount as amount,
+        tax_lines.account_id as account_id,
+        invoices.class_id as class_id,
+        invoices.customer_id as customer_id,
+        'no' as discount
+
+    from invoices
+
+    inner join tax_lines
+        on invoices.invoice_id = tax_lines.invoice_id
+        and invoices.source_relation = tax_lines.source_relation
+),
+
 invoice_join as (
 
     select
@@ -147,6 +221,7 @@ final as (
         transaction_id,
         invoice_join.source_relation,
         index,
+        cast(null as {{ dbt.type_string() }}) as tax_line_index,
         transaction_date,
         customer_id,
         cast(null as {{ dbt.type_string() }}) as vendor_id,
@@ -157,16 +232,32 @@ final as (
             then 'debit' 
             else 'credit' 
         end as transaction_type,
-        'invoice' as transaction_source,
-        discount
+        'invoice' as transaction_source
     from invoice_join
 
     union all
 
     select
         transaction_id,
+        tax_join.source_relation,
+        cast(null as {{ dbt.type_string() }}) as index,
+        tax_line_index,
+        transaction_date,
+        customer_id,
+        cast(null as {{ dbt.type_string() }}) as vendor_id,
+        amount,
+        account_id,
+        class_id,
+        'credit' as transaction_type,
+        'invoice' as transaction_source
+    from tax_join
+    union all
+
+    select
+        transaction_id,
         invoice_join.source_relation,
         index,
+        cast(null as {{ dbt.type_string() }}) as tax_line_index,
         transaction_date,
         customer_id,
         cast(null as {{ dbt.type_string() }}) as vendor_id,
@@ -177,8 +268,7 @@ final as (
             then 'credit' 
             else 'debit' 
         end as transaction_type,
-        'invoice' as transaction_source,
-        discount
+        'invoice' as transaction_source
     from invoice_join
 
     cross join ar_accounts
