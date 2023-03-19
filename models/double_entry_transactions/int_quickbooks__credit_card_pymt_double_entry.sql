@@ -3,7 +3,7 @@ Table that creates a debit record to the associated bank account and a credit re
 */
 
 --To enable this model, set the using_credit_card_payment_txn variable within your dbt_project.yml file to True.
-{{ config(enabled=var('using_credit_card_payment_txn', False)) }}
+{{ config(enabled=var('using_credit_card_payment_txn', True)) }}
 
 with credit_card_payments as (
     
