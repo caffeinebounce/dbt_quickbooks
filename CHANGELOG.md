@@ -1,3 +1,11 @@
+# dbt_quickbooks v0.8.2
+## 🐛 Bug Fixes 🔨
+- Fixed an issue where invoice line items relating to discounts were not pulling through into the GL. 
+- Added in the invoice_lines.sales_item_account_id and the invoice_lines.discount_account_id to account.id coalesce function to the invoice_join CTE
+- Added invoice_lines.discount_account_id to the check if not null
+- Added a discount flag column to the invoice join table
+- Added logic to define transaction_types in the final CTE as credits or debits based on the discount flag. 
+
 # dbt_quickbooks v0.8.1
 ## 🐛 Bug Fixes 🔨
 - Adding partitions by `class_id` in appropriate models to ensure correct account amount aggregations in `quickbooks__general_ledger`, `quickbooks__general_ledger_by_period`, `quickbooks__balance_sheet`, and `quickbooks__profit_and_loss` models. ([#77](https://github.com/fivetran/dbt_quickbooks/pull/77))
