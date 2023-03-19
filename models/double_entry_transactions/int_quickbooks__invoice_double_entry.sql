@@ -104,14 +104,19 @@ invoice_join as (
                 end as amount,
 
         {% if var('using_invoice_bundle', True) %}
-        coalesce(invoice_lines.account_id, items.parent_income_account_id, items.income_account_id, bundle_income_accounts.account_id) as account_id,
+        coalesce(invoice_lines.account_id, items.parent_income_account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, items.income_account_id, bundle_income_accounts.account_id) as account_id,
         {% else %}
-        coalesce(invoice_lines.account_id, items.income_account_id) as account_id,
+        coalesce(invoice_lines.account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, items.income_account_id) as account_id,
         {% endif %}
 
         coalesce(invoice_lines.sales_item_class_id, invoice_lines.discount_class_id, invoices.class_id) as class_id,
 
-        invoices.customer_id
+        invoices.customer_id,
+
+        case when invoice_lines.discount_account_id is not null
+            then 'yes'
+            else 'no'
+        end as discount
 
     from invoices
 
@@ -128,10 +133,10 @@ invoice_join as (
         on bundle_income_accounts.bundle_id = invoice_lines.bundle_id
         and bundle_income_accounts.source_relation = invoice_lines.source_relation
 
-    where coalesce(invoice_lines.account_id, invoice_lines.sales_item_account_id, invoice_lines.sales_item_item_id, invoice_lines.item_id, bundle_income_accounts.account_id) is not null         
+    where coalesce(invoice_lines.account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, invoice_lines.sales_item_item_id, invoice_lines.item_id, bundle_income_accounts.account_id) is not null         
 
     {% else %}
-    where coalesce(invoice_lines.account_id, invoice_lines.sales_item_account_id, invoice_lines.sales_item_item_id, invoice_lines.item_id) is not null 
+    where coalesce(invoice_lines.account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, invoice_lines.sales_item_item_id, invoice_lines.item_id) is not null 
 
     {% endif %}
 ),
@@ -148,8 +153,12 @@ final as (
         amount,
         account_id,
         class_id,
-        'credit' as transaction_type,
-        'invoice' as transaction_source
+        case when discount = 'yes'
+            then 'debit' 
+            else 'credit' 
+        end as transaction_type,
+        'invoice' as transaction_source,
+        discount
     from invoice_join
 
     union all
@@ -164,8 +173,12 @@ final as (
         amount,
         ar_accounts.account_id,
         class_id,
-        'debit' as transaction_type,
-        'invoice' as transaction_source
+        case when discount = 'yes'
+            then 'credit' 
+            else 'debit' 
+        end as transaction_type,
+        'invoice' as transaction_source,
+        discount
     from invoice_join
 
     cross join ar_accounts
