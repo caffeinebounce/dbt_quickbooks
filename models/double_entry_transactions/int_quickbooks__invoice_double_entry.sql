@@ -178,9 +178,9 @@ invoice_join as (
                 end as amount,
 
         {% if var('using_invoice_bundle', True) %}
-        coalesce(invoice_lines.account_id, items.parent_income_account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, items.income_account_id, bundle_income_accounts.account_id) as account_id,
+        coalesce(invoice_lines.account_id, items.parent_income_account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, items.income_account_id, bundle_income_accounts.account_id, other_line_items.sales_item_account_id) as account_id,
         {% else %}
-        coalesce(invoice_lines.account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, items.income_account_id) as account_id,
+        coalesce(invoice_lines.account_id, invoice_lines.sales_item_account_id, invoice_lines.discount_account_id, items.income_account_id, other_line_items.sales_item_account_id) as account_id,
         {% endif %}
 
         coalesce(invoice_lines.sales_item_class_id, invoice_lines.discount_class_id, invoices.class_id) as class_id,
@@ -201,6 +201,16 @@ invoice_join as (
     left join items
         on coalesce(invoice_lines.sales_item_item_id, invoice_lines.item_id) = items.item_id
         and invoice_lines.source_relation = items.source_relation
+
+    left join (
+        select il2.invoice_id, il2.sales_item_account_id
+        from invoice_lines il2
+        where il2.sales_item_account_id is not null
+        group by il2.invoice_id, il2.sales_item_account_id
+    ) as other_line_items
+        on invoice_lines.invoice_id = other_line_items.invoice_id
+        and invoice_lines.sales_item_account_id is null
+        and invoice_lines.sales_item_item_id = 'SHIPPING_ITEM_ID'
 
     {% if var('using_invoice_bundle', True) %}
     left join bundle_income_accounts
