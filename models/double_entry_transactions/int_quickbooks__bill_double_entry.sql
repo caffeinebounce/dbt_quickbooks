@@ -36,7 +36,15 @@ bill_join as (
         bill_lines.index,
         bills.transaction_date,
         bill_lines.amount,
-        coalesce(bill_lines.account_expense_account_id, items.expense_account_id, items.parent_expense_account_id, items.expense_account_id, items.parent_income_account_id, items.income_account_id) as payed_to_account_id,
+        coalesce(
+            bill_lines.account_expense_account_id,
+            bill_mapping_lines.account_expense_account_id,
+            items.expense_account_id,
+            items.parent_expense_account_id,
+            items.expense_account_id,
+            items.parent_income_account_id,
+            items.income_account_id
+        ) as payed_to_account_id,
         bills.payable_account_id,
         coalesce(bill_lines.account_expense_customer_id, bill_lines.item_expense_customer_id) as customer_id,
         coalesce(bill_lines.item_expense_class_id, bill_lines.account_expense_class_id) as class_id,
@@ -50,6 +58,14 @@ bill_join as (
     left join items
         on bill_lines.item_expense_item_id = items.item_id
         and bill_lines.source_relation = items.source_relation
+
+    left join (
+        select bl2.bill_id, bl2.account_expense_account_id
+        from bill_lines bl2
+        where bl2.amount = 0
+    ) as bill_mapping_lines
+        on bill_lines.bill_id = bill_mapping_lines.bill_id
+        and bill_lines.account_expense_account_id is null
 ),
 
 final as (
