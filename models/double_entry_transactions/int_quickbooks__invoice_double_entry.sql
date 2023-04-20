@@ -47,6 +47,7 @@ accounts as (
     select *,
     case
         when account_id = 84 then 1
+        when account_id = 85 then 2
         when account_id = 86 then 3
         else null
     end as tax_agency_id
@@ -261,6 +262,7 @@ final as (
         'credit' as transaction_type,
         'invoice' as transaction_source
     from tax_join
+    
     union all
 
     select
@@ -280,6 +282,25 @@ final as (
         end as transaction_type,
         'invoice' as transaction_source
     from invoice_join
+
+    cross join ar_accounts
+
+    union all
+
+    select
+        transaction_id,
+        tax_join.source_relation,
+        cast(null as {{ dbt.type_string() }}) as index,
+        tax_line_index,
+        transaction_date,
+        customer_id,
+        cast(null as {{ dbt.type_string() }}) as vendor_id,
+        amount,
+        ar_accounts.account_id,
+        class_id,
+        'debit' as transaction_type,
+        'invoice' as transaction_source
+    from tax_join
 
     cross join ar_accounts
 )
